@@ -32,8 +32,17 @@ rs_old <- url_old %>% read_html() %>% html_nodes(xpath='/html/body/table[2]') %>
 # Why did some of the artist-song fail to match up?
 
 #ANSWER
+?full_join
+##Does not allow for repeats. No matter how many different ranks are presented for that given artist/song.
+rs_joined_orig_practice <- full_join(rs_old, rs_new, by = c("Artist", "Song"))
 
+##Does allow for repeats. No matter how many different ranks are presented for that given artist/song.
+rs_joined_orig <- full_join(rs_old, rs_new, by="Song", "Artist")
 
+nrow(rs_joined_orig)
+
+##VIEWER: my viewer was empty!
+ 
 
 ### Question 2 ---------- 
 
@@ -44,7 +53,13 @@ rs_old <- url_old %>% read_html() %>% html_nodes(xpath='/html/body/table[2]') %>
 # Make Rank and Year into integer variables for rs_old before binding them into rs_all
 
 #ANSWER
+rs_new_variable <- mutate(rs_new, Source = "New")
+rs_old_variable <- mutate(rs_old, Source = "Old")
+rs_all <- bind_rows(rs_new_variable, rs_old_variable)
 
+rs_old_variable$Rank <- as.integer(rs_old_variable$Rank)
+rs_old_variable$Year <- as.integer (rs_old_variable$Year)
+rs_all <- bind_rows(rs_new_variable, rs_old_variable)
 
 ### Question 3 ----------
 
@@ -56,7 +71,23 @@ rs_old <- url_old %>% read_html() %>% html_nodes(xpath='/html/body/table[2]') %>
 # Use both functions to make all artists/song lowercase and remove any extra spaces
 
 #ANSWER
+?str_remove_all
+library("stringr")
 
+ 
+rs_all <- rs_all %>% mutate(Artist = str_remove_all(Artist, "The"))
+rs_all <-rs_all %>% mutate(Song = str_remove_all(Song, "The"))
+rs_all <- rs_all %>% mutate(Artist = str_replace_all(Artist, "[&]","and"))
+rs_all <- rs_all %>% mutate(Song = str_replace_all(Song, "[&]","and"))
+rs_all <- rs_all %>% mutate(Artist = str_remove_all(Artist, "[:punct:]"))
+rs_all <- rs_all %>% mutate(Song = str_remove_all(Song, "[:punct:]"))
+
+?str_trim
+?str_to_lower
+rs_all <- rs_all %>% mutate(Artist = str_to_lower (Artist))
+rs_all <- rs_all %>% mutate(Artist = str_trim(Artist))
+rs_all <- rs_all %>% mutate(Song = str_to_lower (Song))
+rs_all <- rs_all %>% mutate(Song = str_trim(Song))
 
 ### Question 4 ----------
 
@@ -69,8 +100,15 @@ rs_old <- url_old %>% read_html() %>% html_nodes(xpath='/html/body/table[2]') %>
 # in the new rs_joined compared to the original. Use nrow to check (there should be 799 rows)
 
 #ANSWER
+rs_all_NEWdf <- split(rs_all, rs_all$Source)
+first_Data <- rs_all_NEWdf[[1]]
+second_Data <- rs_all_NEWdf[[2]]
+rs_joined <- full_join(first_Data, second_Data, by="Artist", "Song")
 
-
+rs_joined <- full_join(first_Data, second_Data, by = c ("Artist", "Song"), suffix = c("_Old","_New"))
+nrow(rs_joined)
+  
+  
 ### Question 5 ----------
 
 # Let's clean up rs_joined with the following steps:
@@ -82,7 +120,12 @@ rs_old <- url_old %>% read_html() %>% html_nodes(xpath='/html/body/table[2]') %>
 # You should now be able to see how each song moved up/down in rankings between the two lists
 
 #ANSWER
+rs_joined$Source_New <- NULL
+rs_joined$Source_Old <- NULL
 
+rs_joined <- rs_joined %>% drop_na(Rank_New, Rank_Old)
+rs_joined <- rs_joined %>% mutate(Rank_Change = floor(Rank_New-Rank_Old))
+rs_joined <- rs_joined %>% arrange(Rank_Change)
 
 ### Question 6 ----------
 
@@ -90,11 +133,17 @@ rs_old <- url_old %>% read_html() %>% html_nodes(xpath='/html/body/table[2]') %>
 # The new variable should be a factor
 # 1971 should be 1970s, 1985 should be 1980s, etc.
 # Group by decade and summarize the mean rank_change for songs released in each decade (you don't have to save it)
-# Which decade improved the most?
+# Which decade improved the most? 60s and 70s?
 
 #ANSWER
+rs_joined$Year_Old_Decade <- rs_joined$Year_Old
+rs_joined <- rs_joined %>% mutate(Year_Old_Decade = floor(Year_Old/10)*10, prefix = "s")
+rs_joined$Year_Old_Decades <- paste0(rs_joined$Year_Old_Decade, rs_joined$prefix)
 
-
+rs_joined$Year_New_Decade <- rs_joined$Year_New
+rs_joined<- rs_joined %>% mutate(Year_New_Decade = floor(Year_New/10)*10)
+rs_joined$Year_New_Decades <- paste0(rs_joined$Year_New_Decade, rs_joined$prefix)
+rs_joinedGrouped <- rs_joined %>% group_by(Year_New_Decades, Year_Old_Decades) %>% summarise_at(vars(Rank_Change), funs(mean(.,na.rm=TRUE)))
 
 ### Question 7 ----------
 
@@ -104,8 +153,17 @@ rs_old <- url_old %>% read_html() %>% html_nodes(xpath='/html/body/table[2]') %>
 # proportion of songs in each of the top three decades (vs. all the rest)
 
 #ANSWER
+?fct_count
+fct_count(rs_joined$Year_New_Decades, sort = T)
+fct_count(rs_joined$Year_Old_Decades, sort = T)
 
+rs_joined <- rs_joined %>% mutate(Decade_New = fct_lump(Year_New_Decades, n=3,
+            other_level = "Other"))
+rs_joined <- rs_joined %>% mutate(Decade_Old = fct_lump(Year_Old_Decades, n=3,
+            other_level = "Other"))
 
+fct_count(rs_joined$Decade_New, prop = T)
+fct_count(rs_joined$Decade_Old, prop = T)
 
 ### Question 8 ---------- 
 
@@ -114,7 +172,10 @@ rs_old <- url_old %>% read_html() %>% html_nodes(xpath='/html/body/table[2]') %>
 # Use parse_date_time to fix it
 
 #ANSWER
-
+setwd()
+top20 <- read.csv("top_20.csv", header = TRUE)
+top20 <- tibble(top20)
+top20 <- top20 %>% mutate(Release_Date_Parsed = parse_date_time(Release, "dmy")) 
 
 ### Question 9 --------
 
@@ -123,7 +184,7 @@ rs_old <- url_old %>% read_html() %>% html_nodes(xpath='/html/body/table[2]') %>
 # overwrite top25 with the pivoted data (there should now be 20 rows!)
 
 #ANSWER
-
+top20 <- top20 %>% pivot_wider(names_from = Style, values_from = Value)
 
 
 ### Question 10 ---------
@@ -138,6 +199,12 @@ rs_old <- url_old %>% read_html() %>% html_nodes(xpath='/html/body/table[2]') %>
 
 #ANSWER
 
+rs_joinedMerged <- left_join(top20, rs_joined, by = "Artist", "Song")
+rs_joinedMerged$Month <- month(rs_joinedMerged$Release_Date_Parsed, label = TRUE)
+rs_joinedMerged$Season <- fct_collapse(rs_joinedMerged$Month, Spring = c("Mar", "Apr", "May"),
+                                Summer = c("Jun", "Jul", "Aug"), Fall = c("Sep", "Oct", "Nov"), Winter= c("Dec", "Jan", "Feb")) 
+
+fct_count(rs_joinedMerged$Season, sort = TRUE)
 
 
 ### Question 11 ---------
@@ -148,6 +215,8 @@ rs_old <- url_old %>% read_html() %>% html_nodes(xpath='/html/body/table[2]') %>
 # Figure out which is the top-ranked song (from Rank_New) that used a minor key
 
 #ANSWER
+fct_count(top20$Key, sort = TRUE)
+#five are minor and fifteen are major. 
 
-
-
+rs_joinedMerged$TopRankedSong <- rank(rs_joinedMerged$Rank_New, ties.method = "average")
+#Song = weher doves cry
